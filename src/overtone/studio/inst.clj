@@ -184,6 +184,50 @@
      (event :new-inst :inst inst#)
      inst#))
 
+(defmacro sinst [sname]
+  (let [
+        n-chans  1 ; only single-channel insts supported for now
+        inst-bus (or (:bus (get (:instruments @studio*) sname))
+                     (audio-bus n-chans)) 
+        new-inst (get (:instruments @studio*) sname)
+        container-group (or (:group new-inst)
+                             (with-server-sync
+                               #(group (str "Inst " sname " Container")
+                                       :tail (:instrument-group @studio*))
+                               "whilst creating an inst container group"))
+
+         instance-group  (or (:instance-group new-inst)
+                              (with-server-sync
+                                #(group (str "Inst " sname)
+                                        :head container-group)
+                                "whilst creating an inst instance group"))
+
+         fx-group        (or (:fx-group new-inst)
+                              (with-server-sync
+                                #(group (str "Inst " sname " FX")
+                                        :tail container-group)
+                                "whilst creating an inst fx group"))
+
+         imixer    (or (:mixer new-inst)
+                        (inst-mixer n-chans
+                                    [:tail container-group]
+                                    :in-bus inst-bus))
+         sdef      {:name sname}
+         fx-chain  []
+         volume    (atom DEFAULT-VOLUME)
+         pan       (atom DEFAULT-PAN)
+         inst      (with-meta
+                      (Inst. sname () () sdef
+                             container-group instance-group fx-group
+                             imixer inst-bus fx-chain
+                             volume pan
+                             n-chans ;; number of channels, 1 for now
+                             )
+                      {:overtone.helpers.lib/to-string #(str (name (:type %)) ":" (:name %))})]
+     (add-instrument inst)
+     (event :new-inst :inst inst)
+     inst))
+
 (defmacro definst
   "Define an instrument and return a player function. The instrument
   definition will be loaded immediately, and a :new-inst event will be
